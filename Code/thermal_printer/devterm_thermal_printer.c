@@ -23,8 +23,6 @@
 #include "ttf_Px437_PS2thin1_8x16.h"
 #include "ttf_Px437_PS2thin2_8x16.h"
 
-
-
 #include "config.h"
 #include "utils.h"
 #include "printer.h"
@@ -47,7 +45,9 @@ CONFIG g_config;
 
 TimeRec battery_chk_tm;
 
-unsigned char optional_font_8x8[8 * 256];
+unsigned char *optional_font;
+int optional_width;
+int optional_height;
 
 int printf_out(CONFIG*cfg, char *format, ...) {
    va_list args;
@@ -130,6 +130,11 @@ void init_printer(){
   battery_chk_tm.time = millis();
   battery_chk_tm.last_status = 0;
   battery_chk_tm.check = 0;
+	
+  free(optional_font);
+  optional_font = NULL;
+  optional_width = 0;
+  optional_height = 0;
 }
 
 const  char url[]  ={"Powered by clockworkpi.com"};
@@ -415,9 +420,11 @@ void printer_set_font(CONFIG*cfg,uint8_t fnbits){
       }  
 
      if(ret == 7){
-        cfg->font->width = 8 ;
-        cfg->font->height = 8;
-        cfg->font->data = optional_font_8x8;
+     	if(optional_font != NULL && optional_width > 0 && optional_height > 0){
+	        cfg->font->width = optional_width ;
+	        cfg->font->height = optional_height;
+	        cfg->font->data = optional_font;
+     	}
      }
 
 }
@@ -445,13 +452,6 @@ void parse_cmd(CONFIG*cfg,uint8_t *cmd, uint8_t cmdidx){
       reset_cmd();
       printer_test(cfg);
       
-    }
-  	
-  	//DC2 F change option font data
-  	if(cmd[0] == ASCII_DC2 && cmd[1] == 0x46){
-      cfg->state = SET_FONT;
-      cfg->img->idx = 0;
-      // do not reset_cmd()
     }
   }
   
@@ -569,6 +569,20 @@ void parse_cmd(CONFIG*cfg,uint8_t *cmd, uint8_t cmdidx){
       reset_cmd();
     }
     
+  	//DC2 F width height change option font data
+    if(cmd[0] == ASCII_DC2 && cmd[1] == 0x46){
+      if(optional_font != NULL){
+        free(optional_font);
+        optional_font = NULL;
+      }
+      optional_width = cmd[2];
+      optional_height = cmd[3];
+      optional_font = (unsigned char *)malloc(optional_width * optional_height * 256 / 8);
+      cfg->state = SET_FONT;
+      cfg->img->idx = 0;
+      // do not reset_cmd()
+    }
+  	
   }
 
   if(cmdidx > 4){
@@ -635,11 +649,14 @@ void parse_serial_stream(CONFIG*cfg,uint8_t input_ch){
         reset_cmd();
       }
     }else if(cfg->state == SET_FONT){
-      optional_font_8x8[cfg->img->idx] = input_ch;
+      optional_font[cfg->img->idx] = input_ch;
       cfg->img->idx++;
-      if(cfg->img->idx >= 8 * 256){//font data full 
+      if(cfg->img->idx >= optional_width * optional_height * 256 / 8){//font data full 
         reset_cmd();
         cfg->state = PRINT_STATE;
+        cfg->font->width = optional_width ;
+	    cfg->font->height = optional_height;
+	    cfg->font->data = optional_font;
       }
     }else{ //PRINT_STATE
       switch(input_ch){
