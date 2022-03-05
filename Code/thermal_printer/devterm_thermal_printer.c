@@ -47,6 +47,8 @@ CONFIG g_config;
 
 TimeRec battery_chk_tm;
 
+unsigned char optional_font_8x8[8 * 256];
+
 int printf_out(CONFIG*cfg, char *format, ...) {
    va_list args;
    int rv;
@@ -411,6 +413,13 @@ void printer_set_font(CONFIG*cfg,uint8_t fnbits){
         cfg->font->height = 16;
         cfg->font->data = font_ttf_Px437_PS2thin2_8x16;
       }  
+
+     if(ret == 7){
+        cfg->font->width = 8 ;
+        cfg->font->height = 8;
+        cfg->font->data = optional_font_8x8;
+     }
+
 }
 
 void parse_cmd(CONFIG*cfg,uint8_t *cmd, uint8_t cmdidx){
@@ -436,6 +445,13 @@ void parse_cmd(CONFIG*cfg,uint8_t *cmd, uint8_t cmdidx){
       reset_cmd();
       printer_test(cfg);
       
+    }
+  	
+  	//DC2 F change option font data
+  	if(cmd[0] == ASCII_DC2 && cmd[1] == 0x46){
+      cfg->state = SET_FONT;
+      cfg->img->idx = 0;
+      // do not reset_cmd()
     }
   }
   
@@ -617,6 +633,13 @@ void parse_serial_stream(CONFIG*cfg,uint8_t input_ch){
         parse_cmd(cfg,cmd,cmd_idx);
       }else{
         reset_cmd();
+      }
+    }else if(cfg->state == SET_FONT){
+      optional_font_8x8[cfg->img->idx] = input_ch;
+      cfg->img->idx++;
+      if(cfg->img->idx >= 8 * 256){//font data full 
+        reset_cmd();
+        cfg->state = PRINT_STATE;
       }
     }else{ //PRINT_STATE
       switch(input_ch){
